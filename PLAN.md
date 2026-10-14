@@ -67,7 +67,12 @@
   결과: 등록 행을 mariadb SELECT로 확인. API 재시작 후 같은 id·수정 내용 유지. 틀린 DB 비밀번호로 실행 시 /api/tasks 503, 로그에 비밀번호 미노출.
   테스트 항목([T11검증] 제목)은 확인 후 삭제해 tasks는 0행. AUTO_INCREMENT는 6부터 시작. 남은 오류 없음.
 ## 5장: 서버 분리
-- [ ] T12: DB 서버 구성 후 App 서버에서 SELECT 1 확인.
+- [x] T12: DB 서버 구성 후 App 서버에서 SELECT 1 확인.
+  기록(2026-10-14): 구성 방식은 WSL 하나에서 역할 분리(DB: MariaDB, App: uvicorn·T13 systemd, Web: Nginx·T14), 사용자 결정. 이 환경은 MariaDB 11.8.6(T09 기록의 10.6.23과 다름), .venv는 Python 3.14.4로 재생성, 패키지 버전은 requirements.txt와 일치.
+  변경 파일: 없음(DB 서버 설정이 이미 요구에 맞음).
+  실행: systemctl is-active/is-enabled mariadb, ss -ltn, .venv/bin/python으로 backend.database.engine에서 SELECT 1.
+  결과: mariadb active·enabled. bind-address 127.0.0.1, 3306은 127.0.0.1에서만 LISTEN, WSL eth0 주소로는 연결 거부. App 경로(.venv → .env → backend.database)로 SELECT 1 → 1, CURRENT_USER task_flow_app@localhost, DATABASE task_flow, utf8mb4. 다른 작업 디렉터리에서도 접속. 권한은 task_flow.* ALL만.
+  참고: tasks 테이블은 2026-10-14 09:57에 이 저장소 코드로 생성된 상태(status·priority ENUM, 0행). 서버를 실제로 나누면 bind-address를 사설 IP로, 사용자 호스트를 App 서버로 제한해야 함. T09 기록의 비밀번호 변경 권장은 DB가 127.0.0.1에만 열린 이번 구성에서는 보류. 남은 오류 없음.
 - [ ] T13: App 서버 코드·가상환경·환경변수·systemd 구성.
   확인: App에서 /api/health 응답.
 - [ ] T14: Web 서버 Nginx와 정적 파일·/api 프록시 구성.
