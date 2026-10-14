@@ -85,6 +85,22 @@
   실행: 사용자가 sudo apt install -y nginx(1.28.3), sudo bash deploy/deploy-web.sh 실행.
   결과: 설치된 설정·정적 파일이 저장소와 동일. Web 주소(http://127.0.0.1) / · app.js · styles.css 200(Nginx가 직접 제공), /api/health·/api/tasks 200(프록시), /docs·/openapi.json·/.env·/backend/main.py 404, 70KB 요청 413. Web 주소로 POST → SQL SELECT로 행 확인 → PATCH → App 프로세스 재시작(systemd 자동 재시작, 새 PID) 후 목록 동일. Windows 쪽에서도 http://127.0.0.1 의 화면·API 200. 남은 오류 없음.
   참고: 검증용 행 "[T14검증] Nginx 경유 등록"(id 2)을 남겨 둠. 프런트엔드 변경 후에는 sudo bash deploy/deploy-web.sh, 백엔드 변경 후에는 sudo systemctl restart task-flow-api. 일반 사용자로 nginx -t를 실행하면 /run/nginx.pid 권한 오류가 나므로 sudo로 실행.
+## 6장: 다중 사용자
+결정(2026-10-14, 사용자): PRD 충돌 문구는 T15에서 정리, 로그인 상태는 서버 세션 + HttpOnly 쿠키, 로그인 ID는 아이디(username), 기존 할 일은 소유자 없이 남겨 두고 누구에게도 보이지 않게 한다(삭제·자동 이전 없음).
+- [x] T15: PRD 정리와 인증 API 명세. PRD의 목적·사용자와 범위·데이터를 다중 사용자 기준으로 고치고, API-SPEC.md에 회원가입·로그인·로그아웃·현재 사용자 API, 아이디·비밀번호 규칙, 세션 쿠키·만료, 401·409 응답을 추가한다.
+  확인: PRD·PLAN·API-SPEC 사이에 충돌 없음(사용자 확인).
+  기록(2026-10-14): PRD.md — 목적·사용자와 범위를 다중 사용자 기준으로 수정(이전 단계는 기록으로 남김), 데이터에 user_id·사용자 항목과 기존 할 일 처리 추가, 완료 기준에 사용자 간 분리 추가, 추가 기능에 F10~F12 추가, 제외 기능 앞 공백 정리. API-SPEC.md — 401·409 상태 코드, 인증 규칙(아이디 ^[a-z0-9_]{3,30}$, 비밀번호 8~64자, scrypt 해시, 세션 쿠키 task_flow_session HttpOnly·SameSite=Lax·7일, 토큰 해시 저장), User 객체, POST /api/auth/signup(가입 후 바로 로그인)·login·logout, GET /api/auth/me, 할 일 API의 인증 규칙(비로그인 401, 다른 사용자 할 일 404), user_id 열 추가 계획.
+  결과: 세 문서에서 '로그인 없음·단일 사용자' 문구는 이전 단계 기록으로만 남고, 세션 7일 등 값이 PRD·API-SPEC에서 일치. 2026-10-14 사용자 확인(가입 후 바로 로그인, 세션 7일, 아이디 대문자 거절, 제외 범위 포함).
+- [ ] T16: users·sessions 테이블과 비밀번호 해시. backend/models.py에 사용자·세션 모델을 추가하고, 비밀번호는 표준 라이브러리 hashlib.scrypt로 솔트와 함께 해시해 저장한다. 세션은 추측할 수 없는 토큰을 쓰고 DB에는 토큰의 해시만 저장한다.
+  확인: python -m backend.init_db 후 두 테이블 확인, 기존 tasks 테이블·행 변화 없음, 비밀번호·토큰 평문이 DB와 로그에 없음.
+- [ ] T17: 인증 API. POST /api/auth/signup·login·logout, GET /api/auth/me를 구현한다. 로그인하면 HttpOnly·SameSite=Lax 세션 쿠키를 발급하고, 로그아웃하면 서버 세션을 지운다.
+  확인: 가입 201, 중복 아이디 409, 입력 위반 422, 틀린 아이디·비밀번호 모두 같은 401, 로그인 후 /me 200, 로그아웃 후 /me 401, 응답에 비밀번호 해시 없음.
+- [ ] T18: 할 일 소유자 적용. tasks에 user_id(NULL 허용, users 참조) 열을 추가하는 스크립트를 만들고(데이터 삭제·초기화 없음), /api/tasks의 조회·등록·수정·삭제·필터를 로그인 사용자의 할 일로 제한한다. 기존 행은 user_id가 비어 있어 누구에게도 보이지 않는다.
+  확인: 비로그인 401, 사용자 A의 할 일을 B가 조회·수정·삭제하면 404, 검색·필터도 본인 것만, 기존 행 수 변화 없음.
+- [ ] T19: 화면에 회원가입·로그인·로그아웃 추가. 로그인 전에는 할 일 화면을 숨기고, API가 401을 반환하면 로그인 화면으로 돌아간다.
+  확인: 브라우저에서 두 사용자가 각각 등록한 목록이 서로 보이지 않음, 로그아웃 후 목록이 사라짐, 새로고침해도 로그인 유지, 사용자 입력은 글자로 표시.
+- [ ] T20: 배포 반영. deploy-web.sh로 화면을, systemctl restart로 App을 갱신한다.
+  확인: Web 주소(http://127.0.0.1)로 두 사용자 시나리오 통과, App 재시작 후 할 일과 로그인 상태 유지.
 ## 추가 작업
 - [x] A01: App(8000)은 API만 제공하도록 FastAPI의 화면 파일 제공(StaticFiles) 제거(2026-10-14 사용자 요청, PLAN 외 작업). 화면은 Nginx(80)만 제공.
   확인: 8000에서 화면 경로 404·API 정상, Web 주소(80)의 화면·API 정상.
@@ -93,6 +109,7 @@
 ## 실행 기준
 T01~T04: python3 -m http.server 5500 --bind 127.0.0.1 --directory frontend
 T05~T11: 가상환경에서 python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
+T12 이후: App은 systemd(task-flow-api, 127.0.0.1:8000), 화면은 Nginx(http://127.0.0.1). 백엔드 변경 후 sudo systemctl restart task-flow-api, 화면 변경 후 sudo bash deploy/deploy-web.sh. 개발 중 시험 실행은 다른 포트(예: 8001)를 쓴다.
 실제 존재하는 파일을 확인한 뒤 명령을 실행한다.
 ## 기록
 각 작업에 변경 파일, 실행 명령, 실제 확인 결과, 남은 오류를 기록한다.
