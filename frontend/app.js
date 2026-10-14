@@ -15,6 +15,14 @@ const PRIORITIES = [
   { value: "LOW", label: "낮음" },
 ];
 const DEFAULT_PRIORITY = "NORMAL";
+const USERNAME_PATTERN = /^[a-z0-9_]{3,30}$/;
+const PASSWORD_MIN_LENGTH = 8;
+const PASSWORD_MAX_LENGTH = 64;
+
+// 로그인한 사용자({id, username, created_at}). 로그인 전이면 null.
+let currentUser = null;
+// 인증 화면 모드: "login" 또는 "signup".
+let authMode = "login";
 
 // 마지막으로 API에서 받은 목록(검색·필터 적용 결과).
 let tasks = [];
@@ -44,6 +52,21 @@ const priorityFilter = document.getElementById("filter-priority");
 const taskList = document.getElementById("task-list");
 const taskCount = document.getElementById("task-count");
 const emptyMessage = document.getElementById("empty-message");
+const authLoading = document.getElementById("auth-loading");
+const authSection = document.getElementById("auth-section");
+const authHeading = document.getElementById("auth-heading");
+const authForm = document.getElementById("auth-form");
+const authUsername = document.getElementById("auth-username");
+const authPassword = document.getElementById("auth-password");
+const authHint = document.getElementById("auth-hint");
+const authSubmit = document.getElementById("auth-submit");
+const authError = document.getElementById("auth-error");
+const authSwitchText = document.getElementById("auth-switch-text");
+const authSwitch = document.getElementById("auth-switch");
+const appSection = document.getElementById("app-section");
+const userBar = document.getElementById("user-bar");
+const userName = document.getElementById("user-name");
+const logoutButton = document.getElementById("logout-button");
 
 class ApiError extends Error {
   constructor(message, status) {
@@ -87,6 +110,11 @@ async function request(method, path, body) {
     data = null;
   }
   if (!response.ok) {
+    // 할 일 요청이 401이면 세션이 끝난 것이므로 로그인 화면으로 돌아간다.
+    // 로그인·가입 실패(401)는 인증 화면에서 직접 처리한다.
+    if (response.status === 401 && !path.startsWith("/auth/")) {
+      showAuth("로그인이 필요합니다. 다시 로그인하세요.");
+    }
     throw new ApiError(errorMessage(data, response.status), response.status);
   }
   return data;
@@ -186,17 +214,20 @@ function listPath() {
 
 // API에서 현재 검색·필터 조건의 목록을 다시 받아 화면을 그린다.
 async function loadTasks() {
+  if (currentUser === null) {
+    return;
+  }
   const requestId = ++listRequestId;
   try {
     const data = await request("GET", listPath());
-    if (requestId !== listRequestId) {
+    if (requestId !== listRequestId || currentUser === null) {
       return;
     }
     tasks = data;
     loadFailed = false;
     apiError.textContent = "";
   } catch (error) {
-    if (requestId !== listRequestId) {
+    if (requestId !== listRequestId || currentUser === null) {
       return;
     }
     loadFailed = true;
@@ -211,6 +242,9 @@ async function runAction(action) {
   try {
     await action();
   } catch (error) {
+    if (error.status === 401) {
+      return;
+    }
     message = error.message;
   }
   await loadTasks();
@@ -263,6 +297,9 @@ async function saveEdit(id, input) {
   try {
     await request("PATCH", `/tasks/${id}`, input);
   } catch (requestError) {
+    if (requestError.status === 401) {
+      return;
+    }
     if (requestError.status === 404) {
       // 이미 삭제된 항목이면 수정 폼을 닫고 최신 목록을 보여 준다.
       editingId = null;
@@ -508,7 +545,9 @@ form.addEventListener("submit", async (event) => {
   try {
     await request("POST", "/tasks", input);
   } catch (requestError) {
-    formError.textContent = `등록하지 못했습니다. ${requestError.message}`;
+    if (requestError.status !== 401) {
+      formError.textContent = `등록하지 못했습니다. ${requestError.message}`;
+    }
     return;
   } finally {
     submitButton.disabled = false;
@@ -535,4 +574,135 @@ priorityFilter.addEventListener("change", () => {
   loadTasks();
 });
 
-loadTasks();
+// 다른 사용자의 목록·입력·필터가 다음 사용자에게 남지 않도록 할 일 화면 상태를 비운다.
+function clearTaskState() {
+  listRequestId += 1;
+  window.clearTimeout(searchTimer);
+  tasks = [];
+  loadFailed = false;
+  editingId = null;
+  editError = "";
+  filters.query = "";
+  filters.status = "";
+  filters.priority = "";
+  searchInput.value = "";
+  statusFilter.value = "";
+  priorityFilter.value = "";
+  resetForm();
+  formError.textContent = "";
+  apiError.textContent = "";
+  render();
+}
+
+function setAuthMode(mode) {
+  authMode = mode;
+  const signup = mode === "signup";
+  authHeading.textContent = signup ? "회원가입" : "로그인";
+  authSubmit.textContent = signup ? "가입하기" : "로그인";
+  authSwitchText.textContent = signup ? "이미 계정이 있나요?" : "계정이 없나요?";
+  authSwitch.textContent = signup ? "로그인" : "회원가입";
+  authHint.hidden = !signup;
+  authPassword.setAttribute("autocomplete", signup ? "new-password" : "current-password");
+  authError.textContent = "";
+}
+
+// 로그인 화면을 보여 준다. message가 있으면 안내로 표시한다.
+function showAuth(message = "") {
+  currentUser = null;
+  clearTaskState();
+  authLoading.hidden = true;
+  appSection.hidden = true;
+  userBar.hidden = true;
+  userName.textContent = "";
+  authSection.hidden = false;
+  authPassword.value = "";
+  authError.textContent = message;
+}
+
+function showApp(user) {
+  currentUser = user;
+  clearTaskState();
+  authLoading.hidden = true;
+  authSection.hidden = true;
+  authPassword.value = "";
+  authError.textContent = "";
+  // 사용자 입력(아이디)도 글자로만 표시한다.
+  userName.textContent = user.username;
+  userBar.hidden = false;
+  appSection.hidden = false;
+  titleInput.focus();
+  loadTasks();
+}
+
+// 검증 실패 시 오류 메시지, 통과 시 null. 서버도 같은 규칙으로 다시 검증한다.
+function validateCredentials(username, password) {
+  if (!USERNAME_PATTERN.test(username)) {
+    return "아이디는 영문 소문자·숫자·밑줄(_) 3~30자로 입력하세요.";
+  }
+  const length = textLength(password);
+  if (length < PASSWORD_MIN_LENGTH || length > PASSWORD_MAX_LENGTH) {
+    return `비밀번호는 ${PASSWORD_MIN_LENGTH}~${PASSWORD_MAX_LENGTH}자로 입력하세요.`;
+  }
+  return null;
+}
+
+authForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (authSubmit.disabled) {
+    return;
+  }
+  // 아이디는 앞뒤 공백만 정리하고, 비밀번호는 입력한 그대로 보낸다.
+  const username = authUsername.value.trim();
+  const password = authPassword.value;
+  const error = validateCredentials(username, password);
+  if (error) {
+    authError.textContent = error;
+    return;
+  }
+
+  authSubmit.disabled = true;
+  let user;
+  try {
+    user = await request("POST", authMode === "signup" ? "/auth/signup" : "/auth/login", { username, password });
+  } catch (requestError) {
+    authError.textContent = requestError.message;
+    authPassword.value = "";
+    authPassword.focus();
+    return;
+  } finally {
+    authSubmit.disabled = false;
+  }
+  showApp(user);
+});
+
+authSwitch.addEventListener("click", () => {
+  setAuthMode(authMode === "login" ? "signup" : "login");
+  authUsername.focus();
+});
+
+logoutButton.addEventListener("click", async () => {
+  logoutButton.disabled = true;
+  try {
+    await request("POST", "/auth/logout");
+  } catch (requestError) {
+    // 서버에 닿지 못하면 세션이 남아 있으므로 로그인 상태를 유지하고 알린다.
+    apiError.textContent = `로그아웃하지 못했습니다. ${requestError.message}`;
+    return;
+  } finally {
+    logoutButton.disabled = false;
+  }
+  setAuthMode("login");
+  showAuth("로그아웃했습니다.");
+});
+
+// 처음 열 때 로그인 상태를 확인한다. 쿠키는 브라우저가 자동으로 보낸다.
+async function start() {
+  setAuthMode("login");
+  try {
+    showApp(await request("GET", "/auth/me"));
+  } catch (error) {
+    showAuth(error.status === 401 ? "" : error.message);
+  }
+}
+
+start();

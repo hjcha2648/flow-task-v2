@@ -241,3 +241,68 @@ h2 {
   clip: rect(0 0 0 0);
   white-space: nowrap;
 }
+
+/* display를 지정한 요소도 hidden 속성이면 숨긴다. */
+[hidden] {
+  display: none !important;
+}
+
+.app-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 24px;
+}
+
+.app-header h1 {
+  margin: 0;
+}
+
+.user-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #444;
+  overflow-wrap: anywhere;
+}
+
+.user-bar button {
+  padding: 6px 12px;
+  font-size: 0.9rem;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+
+.auth-section {
+  max-width: 360px;
+}
+
+.auth-section label {
+  font-size: 0.9rem;
+  color: #444;
+}
+
+.auth-hint {
+  margin: 0;
+  color: #666;
+  font-size: 0.85rem;
+}
+
+.auth-switch {
+  color: #666;
+  font-size: 0.9rem;
+}
+
+.link-button {
+  padding: 0;
+  border: none;
+  background: none;
+  color: #2f6fed;
+  font-size: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
