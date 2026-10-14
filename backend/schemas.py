@@ -7,6 +7,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 TITLE_MAX_LENGTH = 100
 DESCRIPTION_MAX_LENGTH = 2000
 DATE_PATTERN = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
+USERNAME_PATTERN = r"^[a-z0-9_]{3,30}$"
+PASSWORD_MIN_LENGTH = 8
+PASSWORD_MAX_LENGTH = 64
 
 
 class Status(str, Enum):
@@ -91,4 +94,21 @@ class Task(BaseModel):
     status: Status
     priority: Priority
     due_date: date | None
+    created_at: datetime
+
+
+class Credentials(BaseModel):
+    """회원가입·로그인 요청 본문. 비밀번호는 앞뒤 공백을 지우지 않고 그대로 쓴다."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    username: str = Field(pattern=USERNAME_PATTERN)
+    password: str = Field(min_length=PASSWORD_MIN_LENGTH, max_length=PASSWORD_MAX_LENGTH)
+
+
+class User(BaseModel):
+    """API 응답의 사용자. 비밀번호 해시는 넣지 않는다."""
+
+    id: int
+    username: str
     created_at: datetime
