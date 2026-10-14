@@ -79,8 +79,12 @@
   실행: systemd-analyze verify(오류 없음) → 사용자가 sudo cp, daemon-reload, enable --now 실행.
   결과: task-flow-api active·enabled, User hjcha, 설치된 유닛과 저장소 파일 동일. 프로세스 환경에 DB_* 5개 존재. curl /api/health → {"status":"ok"}, /api/tasks 200, / 200, journalctl에 시작·요청 로그. 프로세스를 kill -9 하자 약 3초 뒤 새 PID로 자동 재시작(NRestarts=1), health 정상. 남은 오류 없음.
   참고: 서비스가 8000을 쓰므로 개발용 uvicorn --reload는 다른 포트로 실행하거나 서비스를 멈춘 뒤 실행. 코드 변경 후 sudo systemctl restart task-flow-api.
-- [ ] T14: Web 서버 Nginx와 정적 파일·/api 프록시 구성.
+- [x] T14: Web 서버 Nginx와 정적 파일·/api 프록시 구성.
   확인: Web 주소로 등록, DB 저장, App 재시작 후 유지.
+  기록(2026-10-14): deploy/nginx-task-flow.conf(80 포트, 정적 파일은 /var/www/task-flow, /api/만 127.0.0.1:8000으로 프록시, /docs 등 App의 다른 경로 비공개, 본문 64KB 제한, server_tokens off), deploy/deploy-web.sh(frontend/를 /var/www/task-flow로 동기화, 사이트 설정 설치, 기본 사이트 링크 제거, nginx -t 후 reload) 추가. www-data가 홈 디렉터리(750)를 읽지 못하므로 정적 파일은 복사해 배포.
+  실행: 사용자가 sudo apt install -y nginx(1.28.3), sudo bash deploy/deploy-web.sh 실행.
+  결과: 설치된 설정·정적 파일이 저장소와 동일. Web 주소(http://127.0.0.1) / · app.js · styles.css 200(Nginx가 직접 제공), /api/health·/api/tasks 200(프록시), /docs·/openapi.json·/.env·/backend/main.py 404, 70KB 요청 413. Web 주소로 POST → SQL SELECT로 행 확인 → PATCH → App 프로세스 재시작(systemd 자동 재시작, 새 PID) 후 목록 동일. Windows 쪽에서도 http://127.0.0.1 의 화면·API 200. 남은 오류 없음.
+  참고: 검증용 행 "[T14검증] Nginx 경유 등록"(id 2)을 남겨 둠. 프런트엔드 변경 후에는 sudo bash deploy/deploy-web.sh, 백엔드 변경 후에는 sudo systemctl restart task-flow-api. 일반 사용자로 nginx -t를 실행하면 /run/nginx.pid 권한 오류가 나므로 sudo로 실행.
 ## 실행 기준
 T01~T04: python3 -m http.server 5500 --bind 127.0.0.1 --directory frontend
 T05~T11: 가상환경에서 python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
