@@ -15,6 +15,7 @@
   Node 스텁 테스트 통과(저장, 재실행 후 복원, 손상값 4종에서 등록 중지·원래 값 유지, 저장 실패 시 되돌림, T01 회귀).
   http.server 세 파일 200 응답.
   Windows 브라우저에서 사용자 확인 정상(새로고침 후 유지, 손상값 입력 시 등록 중지). 남은 오류 없음.
+  
 - [x] T03: 상태 변경, 수정, 삭제 확인.
   확인: 삭제 취소 시 유지. 다른 항목이 수정되지 않는다.
   기록(2026-10-13): frontend/app.js 상태 선택·제목 수정·삭제 확인 추가(id 기준), styles.css 항목 버튼·완료 스타일.
@@ -103,28 +104,22 @@
   실행: 8001 포트 시험 서버 + urllib·SQL 시험 스크립트.
   결과: 가입 201(응답은 id·username·created_at만, 쿠키 속성 확인), DB password_hash는 scrypt$… 해시이고 평문 없음, sessions.token_hash는 쿠키 토큰의 SHA-256이며 만료 7일. /me 200, 쿠키 없음·잘못된 쿠키 401. 중복 409, 입력 위반 12종 422(쿠키·행 생성 없음). 3·30자 아이디, 8·64자·앞뒤 공백 비밀번호 정상. 틀린 비밀번호와 없는 아이디 모두 같은 401 본문, 평균 응답 34ms로 동일. 재로그인 시 새 토큰 발급·이전 세션 종료. 로그아웃 204 + Max-Age=0, 이후 /me 401, 다른 기기 세션 유지, 쿠키 없이 로그아웃도 204. 만료시킨 세션은 401이고 행 삭제. /api/tasks·/api/health 그대로. 서버 로그에 비밀번호·토큰 없음. 시험 계정(t17*)은 삭제해 users·sessions 0행.
   진행 중 오류: 시험 스크립트의 SQL 도우미·모호한 열 이름 오류로 두 번 중단(앱 코드 문제 아님). 첫 중단 때 남은 시험 계정 1개를 지운 뒤 다시 실행해 통과. 실행 중 서비스는 재시작 전.
-- [x] T18: 할 일 소유자 적용. tasks에 user_id(NULL 허용, users 참조) 열을 추가하는 스크립트를 만들고(데이터 삭제·초기화 없음), /api/tasks의 조회·등록·수정·삭제·필터를 로그인 사용자의 할 일로 제한한다. 기존 행은 user_id가 비어 있어 누구에게도 보이지 않는다.
+- [ ] T18: 할 일 소유자 적용. tasks에 user_id(NULL 허용, users 참조) 열을 추가하는 스크립트를 만들고(데이터 삭제·초기화 없음), /api/tasks의 조회·등록·수정·삭제·필터를 로그인 사용자의 할 일로 제한한다. 기존 행은 user_id가 비어 있어 누구에게도 보이지 않는다.
   확인: 비로그인 401, 사용자 A의 할 일을 B가 조회·수정·삭제하면 404, 검색·필터도 본인 것만, 기존 행 수 변화 없음.
-  기록(2026-10-14): backend/models.py TaskRow에 user_id(NULL 허용, users 참조, ON DELETE SET NULL, 인덱스) 추가. backend/migrate_user_id.py 신규(기존 tasks에 열·인덱스·외래 키 추가, 이미 있으면 변경 없음, 데이터 삭제 없음). backend/store.py의 목록·등록·수정·삭제를 user_id로 제한(남의 할 일은 없는 것과 같이 None). backend/main.py에 current_user 의존성(세션 쿠키 → 사용자, 없으면 401)을 만들어 /api/auth/me와 /api/tasks 전체에 적용.
-  실행: .venv/bin/python -m backend.migrate_user_id 2회, python -m backend.init_db, 8001 포트 시험 서버 + 시험 스크립트.
-  결과: 이전 할 일 역할의 검증 행을 넣고 마이그레이션 → 1회차 열 추가("기존 할 일 1개는 소유자 없이"), 2회차 변경 없음, 검증 행은 user_id NULL로 그대로. SHOW CREATE TABLE에 user_id·ix_tasks_user_id·fk_tasks_user_id(ON DELETE SET NULL) 확인. 비로그인·잘못된 쿠키로 /api/tasks 4종 401(잘못된 본문이어도 401). 등록 시 소유자가 로그인 사용자로 저장(SQL 확인), 응답에 user_id 없음, 본문의 user_id는 422. 두 사용자의 목록·검색·필터가 서로 분리, 소유자 없는 할 일은 아무에게도 안 보임. 남의 할 일·소유자 없는 할 일·없는 id의 PATCH·DELETE는 같은 404이고 DB 행 변화 없음. 본인 할 일 수정 200·삭제 204·검증 422 유지. 로그아웃 후 401, 재로그인 시 같은 목록. 시험 사용자·할 일과 검증 행은 삭제(users·sessions·tasks 0행).
-  참고: 이 단계부터 화면(http://127.0.0.1)은 로그인 화면이 생기는 T19 전까지 할 일을 불러오지 못함. 실행 중 서비스 반영은 sudo systemctl restart task-flow-api. 사용자를 지우면 그 할 일은 소유자 없이 남으므로(SET NULL) 시험 정리 시 할 일을 먼저 지움. 남은 오류 없음.
-- [x] T19: 화면에 회원가입·로그인·로그아웃 추가. 로그인 전에는 할 일 화면을 숨기고, API가 401을 반환하면 로그인 화면으로 돌아간다.
+- [ ] T19: 화면에 회원가입·로그인·로그아웃 추가. 로그인 전에는 할 일 화면을 숨기고, API가 401을 반환하면 로그인 화면으로 돌아간다.
   확인: 브라우저에서 두 사용자가 각각 등록한 목록이 서로 보이지 않음, 로그아웃 후 목록이 사라짐, 새로고침해도 로그인 유지, 사용자 입력은 글자로 표시.
-  기록(2026-10-14): frontend/index.html에 헤더 사용자 표시·로그아웃 버튼, 로그인/회원가입 화면(auth-section), 할 일 화면 묶음(app-section), 상태 확인 중 안내 추가. frontend/app.js에 시작 시 /api/auth/me로 화면 선택, 로그인·가입 전환과 클라이언트 검증(아이디·비밀번호 규칙), 로그아웃, 할 일 요청 401이면 로그인 화면으로 전환, 사용자 전환 시 목록·입력·검색·필터 초기화 추가. frontend/styles.css에 헤더·인증 화면 스타일과 [hidden] 숨김 규칙 추가. 백엔드 변경 없음.
-  실행: 8001 포트 시험 서버 + Node에서 app.js를 최소 DOM·브라우저별 쿠키 저장소로 실행하는 시험(브라우저 A·B 두 개).
-  결과: 첫 접속은 /me 401 → 로그인 화면(할 일 요청 없음). 가입 화면 전환·잘못된 아이디·비밀번호는 요청 없이 안내. 가입 후 할 일 화면·아이디 표시, HTML 제목은 글자로 표시. B는 자기 목록만 보임. A 새로고침 후 로그인 유지·같은 목록. 로그아웃 → 로그인 화면, 목록·입력·검색어·아이디 표시 비움, 쿠키 삭제, 새로고침해도 로그아웃 상태. 틀린 비밀번호·중복 가입 안내, 올바른 로그인 후 자기 목록. 사용 중 서버 세션을 지우면 다음 동작에서 로그인 화면과 안내. B는 영향 없음. 시험 사용자·할 일 삭제(0행).
-  진행 중 오류: 시험 스텁이 HTML 부모·자식 구조를 만들지 않아 로그아웃 버튼 찾기에서 한 번 실패, 버튼 id로 찾도록 시험만 수정 후 통과. 사용자가 서비스 재시작(13:55)·deploy-web.sh 실행. 같은 시험을 배포된 Web 주소(http://127.0.0.1, Nginx → systemd 서비스, /var/www/task-flow 파일)로 다시 실행해 9개 시나리오 통과, 서비스 로그 오류 0건, Windows에서 화면 200·/api/auth/me 401. 2026-10-14 사용자가 브라우저에서 확인. 남은 오류 없음.
-- [x] T20: 배포 반영. deploy-web.sh로 화면을, systemctl restart로 App을 갱신한다.
+- [ ] T20: 배포 반영. deploy-web.sh로 화면을, systemctl restart로 App을 갱신한다.
   확인: Web 주소(http://127.0.0.1)로 두 사용자 시나리오 통과, App 재시작 후 할 일과 로그인 상태 유지.
-  기록(2026-10-14): 변경 파일 없음(T19까지의 코드를 배포). 배포 상태 확인 — 서비스 시작(13:55)이 마지막 백엔드 커밋(13:50) 이후, /var/www/task-flow 파일·Nginx 설정·systemd 유닛이 저장소와 동일.
-  실행: Web 주소로 시험 스크립트(재시작 전) → 사용자가 sudo systemctl restart task-flow-api(14:01:42, 새 PID) → 같은 쿠키로 시험 스크립트(재시작 후).
-  결과: 재시작 전 — 응답 Server: nginx(Nginx 경유), A·B 가입 201, A 2개·B 1개 등록, 목록·필터 분리, B가 A의 할 일 수정·삭제 시 404, 비로그인 401, A 할 일 상태 DOING 저장. 재시작 후 — 같은 쿠키로 /me 동일(로그인 유지), A·B 목록이 재시작 전과 완전히 같음(DOING 포함), 등록·재로그인 정상, B 영향 없음. 시험 사용자·할 일 삭제(users·sessions·tasks 0행). 남은 오류 없음.
 ## 추가 작업
 - [x] A01: App(8000)은 API만 제공하도록 FastAPI의 화면 파일 제공(StaticFiles) 제거(2026-10-14 사용자 요청, PLAN 외 작업). 화면은 Nginx(80)만 제공.
   확인: 8000에서 화면 경로 404·API 정상, Web 주소(80)의 화면·API 정상.
   기록(2026-10-14): backend/main.py에서 StaticFiles 마운트·FRONTEND_DIR 제거, API-SPEC.md 화면 제공 항목 수정.
   결과: 8001 포트 시험 서버에서 / · /index.html · /app.js · /styles.css 404, /api/health·/api/tasks 200, /docs·/openapi.json 200(OpenAPI 경로는 /api만), 등록 201·삭제 204. 사용자가 sudo systemctl restart task-flow-api 실행 후(11:40) 8000: 화면 경로 404, /api·/docs 200. 80(Nginx): 화면·/api 200, /docs 404, 웹 경유 등록 201·삭제 204. Windows에서 80은 200, 8000/는 404. 남은 오류 없음.
+- [x] A02: 배포 후 브라우저가 예전 화면 파일을 캐시로 쓰지 않도록 Nginx 정적 파일에 Cache-Control: no-cache 추가(2026-10-14 오류 수정, PLAN 외 작업).
+  확인: 화면 파일 응답에 Cache-Control: no-cache, 변경 없을 때 304, 브라우저에서 로그인 화면 표시.
+  오류: 사용자가 브라우저에서 로그인 화면이 뜨지 않는다고 알림. Nginx 접속 로그에서 Chrome은 / 요청 없이 app.js만 새로 받았고 /api/auth/me 요청이 없음 → 캐시된 로그인 이전 index.html과 새 app.js가 섞여 app.js가 auth 요소를 찾지 못하고 시작 단계에서 멈춤. Nginx가 Cache-Control 없이 Last-Modified만 보내 브라우저가 index.html을 다시 묻지 않음. 같은 시각 VS Code 내장 브라우저는 / 304 → /api/auth/me 401로 정상.
+  기록: deploy/nginx-task-flow.conf의 location /에 add_header Cache-Control "no-cache" always와 X-Content-Type-Options(상속되지 않으므로 다시) 추가.
+  결과: 임시 nginx(일반 사용자, 8088 포트)로 확인 — 구문 정상, / · index.html · app.js · styles.css에 Cache-Control: no-cache와 nosniff, ETag로 다시 요청하면 304. 사용자가 deploy-web.sh로 배포, 설치된 설정이 저장소와 같고 Web 주소 응답에 Cache-Control: no-cache 확인. 2026-10-14 사용자가 브라우저에서 로그인 화면 표시 확인. 이미 예전 파일을 캐시한 브라우저는 한 번 Ctrl+F5 필요. 남은 오류 없음.
 ## 실행 기준
 T01~T04: python3 -m http.server 5500 --bind 127.0.0.1 --directory frontend
 T05~T11: 가상환경에서 python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
