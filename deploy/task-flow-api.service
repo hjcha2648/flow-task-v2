@@ -1,0 +1,26 @@
+# Task Flow API(App 서버) systemd 서비스.
+# 설치: sudo cp deploy/task-flow-api.service /etc/systemd/system/
+#       sudo systemctl daemon-reload && sudo systemctl enable --now task-flow-api
+# 경로와 사용자는 이 WSL 구성(hjcha, ~/vibe-lab/flow-task) 기준이다.
+
+[Unit]
+Description=Task Flow API (uvicorn)
+After=network.target mariadb.service
+Wants=mariadb.service
+
+[Service]
+Type=simple
+User=hjcha
+Group=hjcha
+WorkingDirectory=/home/hjcha/vibe-lab/flow-task
+# DB 접속 정보는 .env에서 환경변수로 읽는다. 비밀번호를 이 파일에 쓰지 않는다.
+EnvironmentFile=/home/hjcha/vibe-lab/flow-task/.env
+# 운영 실행이므로 --reload를 쓰지 않는다. Web 서버(Nginx)가 프록시하므로 127.0.0.1에만 연다.
+ExecStart=/home/hjcha/vibe-lab/flow-task/.venv/bin/python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

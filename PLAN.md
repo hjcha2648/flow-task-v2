@@ -73,8 +73,12 @@
   실행: systemctl is-active/is-enabled mariadb, ss -ltn, .venv/bin/python으로 backend.database.engine에서 SELECT 1.
   결과: mariadb active·enabled. bind-address 127.0.0.1, 3306은 127.0.0.1에서만 LISTEN, WSL eth0 주소로는 연결 거부. App 경로(.venv → .env → backend.database)로 SELECT 1 → 1, CURRENT_USER task_flow_app@localhost, DATABASE task_flow, utf8mb4. 다른 작업 디렉터리에서도 접속. 권한은 task_flow.* ALL만.
   참고: tasks 테이블은 2026-10-14 09:57에 이 저장소 코드로 생성된 상태(status·priority ENUM, 0행). 서버를 실제로 나누면 bind-address를 사설 IP로, 사용자 호스트를 App 서버로 제한해야 함. T09 기록의 비밀번호 변경 권장은 DB가 127.0.0.1에만 열린 이번 구성에서는 보류. 남은 오류 없음.
-- [ ] T13: App 서버 코드·가상환경·환경변수·systemd 구성.
+- [x] T13: App 서버 코드·가상환경·환경변수·systemd 구성.
   확인: App에서 /api/health 응답.
+  기록(2026-10-14): deploy/task-flow-api.service 추가(현재 계정 hjcha, 코드 ~/vibe-lab/flow-task, .venv Python 3.14.4, EnvironmentFile=.env, 127.0.0.1:8000, --reload 없음, Restart=on-failure, mariadb 이후 시작). 서비스 파일에 비밀번호 없음.
+  실행: systemd-analyze verify(오류 없음) → 사용자가 sudo cp, daemon-reload, enable --now 실행.
+  결과: task-flow-api active·enabled, User hjcha, 설치된 유닛과 저장소 파일 동일. 프로세스 환경에 DB_* 5개 존재. curl /api/health → {"status":"ok"}, /api/tasks 200, / 200, journalctl에 시작·요청 로그. 프로세스를 kill -9 하자 약 3초 뒤 새 PID로 자동 재시작(NRestarts=1), health 정상. 남은 오류 없음.
+  참고: 서비스가 8000을 쓰므로 개발용 uvicorn --reload는 다른 포트로 실행하거나 서비스를 멈춘 뒤 실행. 코드 변경 후 sudo systemctl restart task-flow-api.
 - [ ] T14: Web 서버 Nginx와 정적 파일·/api 프록시 구성.
   확인: Web 주소로 등록, DB 저장, App 재시작 후 유지.
 ## 실행 기준
