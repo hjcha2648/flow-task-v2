@@ -91,8 +91,12 @@
   확인: PRD·PLAN·API-SPEC 사이에 충돌 없음(사용자 확인).
   기록(2026-10-14): PRD.md — 목적·사용자와 범위를 다중 사용자 기준으로 수정(이전 단계는 기록으로 남김), 데이터에 user_id·사용자 항목과 기존 할 일 처리 추가, 완료 기준에 사용자 간 분리 추가, 추가 기능에 F10~F12 추가, 제외 기능 앞 공백 정리. API-SPEC.md — 401·409 상태 코드, 인증 규칙(아이디 ^[a-z0-9_]{3,30}$, 비밀번호 8~64자, scrypt 해시, 세션 쿠키 task_flow_session HttpOnly·SameSite=Lax·7일, 토큰 해시 저장), User 객체, POST /api/auth/signup(가입 후 바로 로그인)·login·logout, GET /api/auth/me, 할 일 API의 인증 규칙(비로그인 401, 다른 사용자 할 일 404), user_id 열 추가 계획.
   결과: 세 문서에서 '로그인 없음·단일 사용자' 문구는 이전 단계 기록으로만 남고, 세션 7일 등 값이 PRD·API-SPEC에서 일치. 2026-10-14 사용자 확인(가입 후 바로 로그인, 세션 7일, 아이디 대문자 거절, 제외 범위 포함).
-- [ ] T16: users·sessions 테이블과 비밀번호 해시. backend/models.py에 사용자·세션 모델을 추가하고, 비밀번호는 표준 라이브러리 hashlib.scrypt로 솔트와 함께 해시해 저장한다. 세션은 추측할 수 없는 토큰을 쓰고 DB에는 토큰의 해시만 저장한다.
+- [x] T16: users·sessions 테이블과 비밀번호 해시. backend/models.py에 사용자·세션 모델을 추가하고, 비밀번호는 표준 라이브러리 hashlib.scrypt로 솔트와 함께 해시해 저장한다. 세션은 추측할 수 없는 토큰을 쓰고 DB에는 토큰의 해시만 저장한다.
   확인: python -m backend.init_db 후 두 테이블 확인, 기존 tasks 테이블·행 변화 없음, 비밀번호·토큰 평문이 DB와 로그에 없음.
+  기록(2026-10-14): backend/models.py에 UserRow(users: username VARCHAR(30) UNIQUE, password_hash, created_at)·AuthSessionRow(sessions: user_id FK→users ON DELETE CASCADE, token_hash CHAR(64) UNIQUE, created_at, expires_at) 추가. backend/security.py 신규(hashlib.scrypt n=2^14 r=8 p=1, 솔트 16바이트, 형식 scrypt$n$r$p$솔트$해시, hmac.compare_digest 비교, secrets.token_urlsafe(32) 토큰, SHA-256 토큰 해시, 세션 7일). backend/init_db.py가 세 테이블의 생성 여부를 출력. 새 패키지 없음.
+  실행: .venv/bin/python -m backend.init_db 2회.
+  결과: 1회차 users·sessions 생성·tasks 그대로, 2회차 모두 "이미 있어 변경하지 않음". SHOW CREATE TABLE로 두 테이블 구조·외래 키·고유 키 확인(0행). tasks는 생성 시각(09:57:58)·열 구성이 그대로(init_db 전 스냅숏 스크립트가 경로 오류로 실패해 행 체크섬 비교는 못 함). 해시 함수 시험: 같은 비밀번호도 매번 다른 해시, 해시에 평문 없음, 틀린 비밀번호 5종·손상된 저장값 8종 거부, 한글·이모지·64자·공백 포함 비밀번호 정상, 해시 1회 약 30ms. 토큰 43자 무작위·해시 64자. 8001 시험 서버에서 기존 /api/tasks 정상. 실행 중 서비스는 재시작하지 않음(T17에서 반영).
+  진행 중 오류: 잘린 해시(끝 4글자 제거)가 검증을 통과하는 문제를 시험에서 발견해 솔트·해시 길이를 고정하도록 수정 후 통과. 비밀번호·토큰이 실제 DB 행에 평문으로 없는지는 가입 API가 생기는 T17에서 다시 확인.
 - [ ] T17: 인증 API. POST /api/auth/signup·login·logout, GET /api/auth/me를 구현한다. 로그인하면 HttpOnly·SameSite=Lax 세션 쿠키를 발급하고, 로그아웃하면 서버 세션을 지운다.
   확인: 가입 201, 중복 아이디 409, 입력 위반 422, 틀린 아이디·비밀번호 모두 같은 401, 로그인 후 /me 200, 로그아웃 후 /me 401, 응답에 비밀번호 해시 없음.
 - [ ] T18: 할 일 소유자 적용. tasks에 user_id(NULL 허용, users 참조) 열을 추가하는 스크립트를 만들고(데이터 삭제·초기화 없음), /api/tasks의 조회·등록·수정·삭제·필터를 로그인 사용자의 할 일로 제한한다. 기존 행은 user_id가 비어 있어 누구에게도 보이지 않는다.
