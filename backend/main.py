@@ -1,6 +1,8 @@
 import logging
 
-from fastapi import FastAPI, HTTPException, Request, Response, status
+from typing import Annotated
+
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -85,9 +87,8 @@ def logout(request: Request, response: Response) -> None:
     response.delete_cookie(SESSION_COOKIE, path="/", httponly=True, samesite="lax")
 
 
-@app.get("/api/auth/me")
-def me(request: Request) -> User:
-    """현재 로그인한 사용자를 반환한다."""
+def current_user(request: Request) -> User:
+    """세션 쿠키로 로그인한 사용자를 찾는다. 없거나 만료된 세션은 401."""
     token = request.cookies.get(SESSION_COOKIE)
     user = auth_store.user_for_token(token) if token else None
     if user is None:
@@ -95,33 +96,43 @@ def me(request: Request) -> User:
     return user
 
 
+CurrentUser = Annotated[User, Depends(current_user)]
+
+
+@app.get("/api/auth/me")
+def me(user: CurrentUser) -> User:
+    """현재 로그인한 사용자를 반환한다."""
+    return user
+
+
 @app.get("/api/tasks")
 def list_tasks(
+    user: CurrentUser,
     q: str | None = None,
     status: Status | None = None,
     priority: Priority | None = None,
 ) -> list[Task]:
-    """제목 검색(q)과 상태·우선순위 필터를 AND로 적용해 등록 순서로 반환한다."""
-    return store.list(q=q, status=status, priority=priority)
+    """로그인한 사용자의 할 일에 제목 검색(q)과 상태·우선순위 필터를 AND로 적용해 등록 순서로 반환한다."""
+    return store.list(user.id, q=q, status=status, priority=priority)
 
 
 @app.post("/api/tasks", status_code=status.HTTP_201_CREATED)
-def create_task(data: TaskCreate) -> Task:
-    """할 일을 등록한다. 상태는 항상 TODO로 시작한다."""
-    return store.create(data)
+def create_task(data: TaskCreate, user: CurrentUser) -> Task:
+    """로그인한 사용자의 할 일로 등록한다. 상태는 항상 TODO로 시작한다."""
+    return store.create(user.id, data)
 
 
 @app.patch("/api/tasks/{task_id}")
-def update_task(task_id: int, data: TaskUpdate) -> Task:
-    """보낸 필드만 수정하고 나머지는 유지한다."""
-    task = store.update(task_id, data.changes())
+def update_task(task_id: int, data: TaskUpdate, user: CurrentUser) -> Task:
+    """보낸 필드만 수정하고 나머지는 유지한다. 남의 할 일은 없는 것과 같이 404."""
+    task = store.update(user.id, task_id, data.changes())
     if task is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=TASK_NOT_FOUND)
     return task
 
 
 @app.delete("/api/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_task(task_id: int) -> None:
-    """할 일을 삭제한다."""
-    if not store.delete(task_id):
+def delete_task(task_id: int, user: CurrentUser) -> None:
+    """할 일을 삭제한다. 남의 할 일은 없는 것과 같이 404."""
+    if not store.delete(user.id, task_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=TASK_NOT_FOUND)

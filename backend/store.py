@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from enum import Enum
 
 from sqlalchemy import func, select
+from sqlalchemy.orm import Session
 
 from .database import SessionLocal
 from .models import TaskRow
@@ -31,12 +32,13 @@ class DbTaskStore:
 
     def list(
         self,
+        user_id: int,
         q: str | None = None,
         status: Status | None = None,
         priority: Priority | None = None,
     ) -> list[Task]:
-        """조건을 모두 만족하는 할 일을 id 순서로 반환한다. None 조건은 무시한다."""
-        statement = select(TaskRow).order_by(TaskRow.id)
+        """user_id의 할 일 중 조건을 모두 만족하는 것을 id 순서로 반환한다. None 조건은 무시한다."""
+        statement = select(TaskRow).where(TaskRow.user_id == user_id).order_by(TaskRow.id)
         query = (q or "").strip().lower()
         if query:
             # %, _ 를 글자 그대로 검색하고, DB 정렬 규칙과 관계없이 소문자로 비교한다.
@@ -50,8 +52,9 @@ class DbTaskStore:
         with SessionLocal() as session:
             return [to_task(row) for row in session.scalars(statement)]
 
-    def create(self, data: TaskCreate) -> Task:
+    def create(self, user_id: int, data: TaskCreate) -> Task:
         row = TaskRow(
+            user_id=user_id,
             title=data.title,
             description=data.description,
             status=Status.TODO.value,
@@ -64,10 +67,14 @@ class DbTaskStore:
             session.flush()
             return to_task(row)
 
-    def update(self, task_id: int, changes: dict[str, object]) -> Task | None:
-        """전달된 필드만 바꾼다. 없는 id는 None을 반환한다."""
+    def _owned_row(self, session: Session, user_id: int, task_id: int) -> TaskRow | None:
+        """user_id가 소유한 할 일만 찾는다. 다른 사용자·소유자 없는 할 일은 없는 것과 같이 None."""
+        return session.scalar(select(TaskRow).where(TaskRow.id == task_id, TaskRow.user_id == user_id))
+
+    def update(self, user_id: int, task_id: int, changes: dict[str, object]) -> Task | None:
+        """전달된 필드만 바꾼다. 없거나 남의 id는 None을 반환한다."""
         with SessionLocal() as session, session.begin():
-            row = session.get(TaskRow, task_id)
+            row = self._owned_row(session, user_id, task_id)
             if row is None:
                 return None
             for name, value in changes.items():
@@ -75,10 +82,10 @@ class DbTaskStore:
             session.flush()
             return to_task(row)
 
-    def delete(self, task_id: int) -> bool:
-        """삭제했으면 True, 없는 id면 False를 반환한다."""
+    def delete(self, user_id: int, task_id: int) -> bool:
+        """삭제했으면 True, 없거나 남의 id면 False를 반환한다."""
         with SessionLocal() as session, session.begin():
-            row = session.get(TaskRow, task_id)
+            row = self._owned_row(session, user_id, task_id)
             if row is None:
                 return False
             session.delete(row)

@@ -63,3 +63,8 @@ class TaskRow(Base):
     due_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     # UTC 기준 등록 일시. 시간대 정보 없이 저장하고 API 응답에서 UTC로 표시한다.
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
+    # 소유자. 다중 사용자 전환 이전 할 일은 비어 있어 누구에게도 보이지 않는다.
+    # 사용자 행이 지워져도 할 일은 지우지 않고 소유자만 비운다.
+    user_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True
+    )
