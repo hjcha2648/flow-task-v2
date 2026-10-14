@@ -85,6 +85,11 @@
   실행: 사용자가 sudo apt install -y nginx(1.28.3), sudo bash deploy/deploy-web.sh 실행.
   결과: 설치된 설정·정적 파일이 저장소와 동일. Web 주소(http://127.0.0.1) / · app.js · styles.css 200(Nginx가 직접 제공), /api/health·/api/tasks 200(프록시), /docs·/openapi.json·/.env·/backend/main.py 404, 70KB 요청 413. Web 주소로 POST → SQL SELECT로 행 확인 → PATCH → App 프로세스 재시작(systemd 자동 재시작, 새 PID) 후 목록 동일. Windows 쪽에서도 http://127.0.0.1 의 화면·API 200. 남은 오류 없음.
   참고: 검증용 행 "[T14검증] Nginx 경유 등록"(id 2)을 남겨 둠. 프런트엔드 변경 후에는 sudo bash deploy/deploy-web.sh, 백엔드 변경 후에는 sudo systemctl restart task-flow-api. 일반 사용자로 nginx -t를 실행하면 /run/nginx.pid 권한 오류가 나므로 sudo로 실행.
+## 추가 작업
+- [x] A01: App(8000)은 API만 제공하도록 FastAPI의 화면 파일 제공(StaticFiles) 제거(2026-10-14 사용자 요청, PLAN 외 작업). 화면은 Nginx(80)만 제공.
+  확인: 8000에서 화면 경로 404·API 정상, Web 주소(80)의 화면·API 정상.
+  기록(2026-10-14): backend/main.py에서 StaticFiles 마운트·FRONTEND_DIR 제거, API-SPEC.md 화면 제공 항목 수정.
+  결과: 8001 포트 시험 서버에서 / · /index.html · /app.js · /styles.css 404, /api/health·/api/tasks 200, /docs·/openapi.json 200(OpenAPI 경로는 /api만), 등록 201·삭제 204. 사용자가 sudo systemctl restart task-flow-api 실행 후(11:40) 8000: 화면 경로 404, /api·/docs 200. 80(Nginx): 화면·/api 200, /docs 404, 웹 경유 등록 201·삭제 204. Windows에서 80은 200, 8000/는 404. 남은 오류 없음.
 ## 실행 기준
 T01~T04: python3 -m http.server 5500 --bind 127.0.0.1 --directory frontend
 T05~T11: 가상환경에서 python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000 --reload
